@@ -1,0 +1,10 @@
+# Internal tooling (non-hidden, must be explicit)
+specs/
+CLAUDE.md
+CONVERSATION.md
+
+# IDE files
+*.iml
+
+# Build artifacts
+build/
