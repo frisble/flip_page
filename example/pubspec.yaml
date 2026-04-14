@@ -1,0 +1,18 @@
+name: flip_page_example
+description: Demo app for the flip_page package.
+publish_to: none
+
+environment:
+  sdk: ^3.11.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flip_page:
+    path: ../
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:

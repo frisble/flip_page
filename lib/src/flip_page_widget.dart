@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
+import 'flip_page_controller.dart';
+import 'gestures/flip_drag_recognizer.dart';
 import 'rendering/flip_corner.dart';
 import 'rendering/fold_geometry.dart';
 import 'rendering/fold_painter.dart';
@@ -25,6 +27,7 @@ class FlipPage extends StatefulWidget {
   const FlipPage({
     super.key,
     required this.pages,
+    this.controller,
     this.onPageChanged,
     this.initialPage = 0,
     this.animationDuration = const Duration(milliseconds: 280),
@@ -32,10 +35,17 @@ class FlipPage extends StatefulWidget {
     this.backTintColor = const Color(0x66000000),
     this.shadowColor = const Color(0x33000000),
     this.flipCornerFraction = 0.5,
+    this.edgeHitZoneFraction,
   });
 
   /// Ordered list of pages to display. May be empty.
   final List<Widget> pages;
+
+  /// Optional controller for programmatic navigation.
+  ///
+  /// If `null`, the widget owns an internal controller. If supplied, the
+  /// caller is responsible for [FlipPageController.dispose].
+  final FlipPageController? controller;
 
   /// Invoked once per settled page transition with the new index.
   final ValueChanged<int>? onPageChanged;
@@ -61,13 +71,19 @@ class FlipPage extends StatefulWidget {
   /// anchors. Passed to [FlipCorner.pickFromPointer] at drag start.
   final double flipCornerFraction;
 
+  /// Fraction of the slot width on each side that is sensitive to flip
+  /// drags. `null` defaults to `0.4` (outer 40% on each side).
+  final double? edgeHitZoneFraction;
+
   @override
   State<FlipPage> createState() => _FlipPageState();
 }
 
 class _FlipPageState extends State<FlipPage>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+  late final AnimationController _animController;
+  late FlipPageController _effectiveController;
+  FlipPageController? _ownedController;
   late int _currentIndex;
   double _progress = 0;
   FlipDirection _direction = FlipDirection.none;
@@ -82,19 +98,29 @@ class _FlipPageState extends State<FlipPage>
   void initState() {
     super.initState();
     _currentIndex = _clampIndex(widget.initialPage);
-    _controller = AnimationController(
+    _animController = AnimationController(
       vsync: this,
       duration: widget.animationDuration,
     )..addListener(_onTick);
+    _initController();
   }
 
   @override
   void didUpdateWidget(FlipPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.animationDuration != oldWidget.animationDuration) {
-      _controller.duration = widget.animationDuration;
+      _animController.duration = widget.animationDuration;
+    }
+    if (widget.controller != oldWidget.controller) {
+      _effectiveController.detach();
+      if (oldWidget.controller == null) {
+        _ownedController?.dispose();
+        _ownedController = null;
+      }
+      _initController();
     }
     if (widget.pages.length != oldWidget.pages.length) {
+      _effectiveController.updatePageCount(widget.pages.length);
       final int newIndex = _clampIndex(_currentIndex);
       if (newIndex != _currentIndex) {
         _currentIndex = newIndex;
@@ -105,11 +131,68 @@ class _FlipPageState extends State<FlipPage>
 
   @override
   void dispose() {
+    _effectiveController.detach();
+    _ownedController?.dispose();
     _outgoingSnapshot?.dispose();
-    _controller
+    _animController
       ..removeListener(_onTick)
       ..dispose();
     super.dispose();
+  }
+
+  void _initController() {
+    if (widget.controller != null) {
+      _effectiveController = widget.controller!;
+    } else {
+      _ownedController = FlipPageController(initialPage: _currentIndex);
+      _effectiveController = _ownedController!;
+    }
+    _effectiveController.attach(
+      pageCount: widget.pages.length,
+      currentPage: _currentIndex,
+      animateHook: _controllerAnimateTo,
+      jumpHook: _controllerJumpTo,
+    );
+  }
+
+  void _controllerJumpTo(int index) {
+    setState(() {
+      _currentIndex = index;
+      _resetDragState();
+    });
+    _effectiveController.syncCurrentPage(index);
+    widget.onPageChanged?.call(index);
+  }
+
+  Future<void> _controllerAnimateTo(int index) async {
+    // Determine direction for the animation.
+    final bool forward = index > _currentIndex;
+    final FlipCorner anchor =
+        forward ? FlipCorner.bottomRight : FlipCorner.bottomLeft;
+    final FlipDirection dir =
+        forward ? FlipDirection.forward : FlipDirection.backward;
+
+    final ui.Image? snapshot = _captureSnapshot();
+
+    setState(() {
+      _direction = dir;
+      _anchor = anchor;
+      _progress = 0;
+      _outgoingSnapshot?.dispose();
+      _outgoingSnapshot = snapshot;
+    });
+
+    final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final Duration dur =
+        reduceMotion ? Duration.zero : widget.animationDuration;
+    _animController.value = 0;
+    await _animController.animateTo(
+      1.0,
+      duration: dur,
+      curve: widget.animationCurve,
+    );
+    if (!mounted) return;
+    _settleComplete(targetIndex: index);
   }
 
   int _clampIndex(int i) {
@@ -118,12 +201,12 @@ class _FlipPageState extends State<FlipPage>
   }
 
   void _onTick() {
-    setState(() => _progress = _controller.value);
+    setState(() => _progress = _animController.value);
   }
 
   void _onDragStart(DragStartDetails details) {
     if (widget.pages.length <= 1) return;
-    if (_controller.isAnimating) _controller.stop();
+    if (_animController.isAnimating) _animController.stop();
 
     final Size? slotSize = context.size;
     if (slotSize == null) return;
@@ -176,8 +259,8 @@ class _FlipPageState extends State<FlipPage>
         signedVelocity >= _flingVelocityThreshold;
     final double target = shouldComplete ? 1.0 : 0.0;
 
-    _controller.value = _progress;
-    _controller
+    _animController.value = _progress;
+    _animController
         .animateTo(
       target,
       duration: widget.animationDuration,
@@ -193,14 +276,20 @@ class _FlipPageState extends State<FlipPage>
     });
   }
 
-  void _settleComplete() {
-    final int newIndex = _currentIndex +
-        (_direction == FlipDirection.forward ? 1 : -1);
+  void _settleComplete({int? targetIndex}) {
+    final int newIndex = targetIndex ??
+        (_currentIndex + (_direction == FlipDirection.forward ? 1 : -1));
     setState(() {
       _currentIndex = newIndex;
       _resetDragState();
     });
+    _effectiveController.syncCurrentPage(newIndex);
     widget.onPageChanged?.call(newIndex);
+    SemanticsService.sendAnnouncement(
+      View.of(context),
+      'Page ${newIndex + 1}',
+      TextDirection.ltr,
+    );
   }
 
   void _settleRevert() {
@@ -236,12 +325,29 @@ class _FlipPageState extends State<FlipPage>
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final double slotWidth = constraints.biggest.width;
         // Landscape spread (US3) is deferred; render portrait for v0.1 MVP.
-        return GestureDetector(
+        return RawGestureDetector(
+          gestures: <Type, GestureRecognizerFactory>{
+            FlipDragRecognizer:
+                GestureRecognizerFactoryWithHandlers<FlipDragRecognizer>(
+              () => FlipDragRecognizer(
+                edgeHitZoneFraction:
+                    widget.edgeHitZoneFraction ?? 0.4,
+                slotWidth: slotWidth,
+              ),
+              (FlipDragRecognizer instance) {
+                instance
+                  ..edgeHitZoneFraction =
+                      widget.edgeHitZoneFraction ?? 0.4
+                  ..slotWidth = slotWidth
+                  ..onStart = _onDragStart
+                  ..onUpdate = _onDragUpdate
+                  ..onEnd = _onDragEnd;
+              },
+            ),
+          },
           behavior: HitTestBehavior.translucent,
-          onHorizontalDragStart: _onDragStart,
-          onHorizontalDragUpdate: _onDragUpdate,
-          onHorizontalDragEnd: _onDragEnd,
           child: _buildContent(constraints.biggest),
         );
       },
@@ -253,9 +359,13 @@ class _FlipPageState extends State<FlipPage>
         _direction != FlipDirection.none && _progress > 0;
 
     if (!dragging) {
-      return RepaintBoundary(
-        key: _snapshotKey,
-        child: SizedBox.expand(child: widget.pages[_currentIndex]),
+      return Semantics(
+        label: 'Page ${_currentIndex + 1} of ${widget.pages.length}',
+        liveRegion: true,
+        child: RepaintBoundary(
+          key: _snapshotKey,
+          child: SizedBox.expand(child: widget.pages[_currentIndex]),
+        ),
       );
     }
 
