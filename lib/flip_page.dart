@@ -1,5 +1,6 @@
-/// A Calculator.
-class Calculator {
-  /// Returns [value] plus 1.
-  int addOne(int value) => value + 1;
-}
+/// A realistic page-flip widget for Flutter with curl animation.
+///
+/// See the package README for usage.
+library;
+
+export 'src/flip_page_widget.dart' show FlipPage;
