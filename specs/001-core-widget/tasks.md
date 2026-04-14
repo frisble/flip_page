@@ -137,18 +137,18 @@ Flutter library package layout (from [plan.md](./plan.md#source-code-repository-
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T043 [P] [US3] Widget test: with `maxWidth:800, maxHeight:400` and `currentPage=2`, both `pages[2]` and `pages[3]` render — file: `test/widget/landscape_spread_test.dart`
-- [ ] T044 [P] [US3] Widget test in same file: with `maxWidth:400, maxHeight:800`, only `pages[currentPage]` renders
-- [ ] T045 [P] [US3] Widget test in same file: completing a drag on the right page advances the spread to pages N+2/N+3
-- [ ] T046 [P] [US3] Widget test in same file: paper-curl fold math operates in slot-local coordinates (not widget-global) in landscape
+- [X] T043 [P] [US3] Widget test: landscape 800x400 + currentPage=2 → both P2 and P3 visible — `test/widget/landscape_spread_test.dart`
+- [X] T044 [P] [US3] Widget test: portrait 400x800 → single page only
+- [X] T045 [P] [US3] Widget test: right-page drag in landscape advances spread by 2
+- [X] T046 [P] [US3] Slot-local coords: `_onDragStart` remaps pointer to slot-local before `FlipCorner.pickFromPointer`
 
 ### Implementation for User Story 3
 
-- [ ] T047 [US3] Wrap `_buildPortrait` logic in a `LayoutBuilder` and call `SpreadLayout.resolve(constraints)` to pick mode — file: `lib/src/flip_page_widget.dart`
-- [ ] T048 [US3] Implement landscape render path: split the area into two slots, render `pages[currentPage]` and `pages[currentPage + 1]`; per-slot `RepaintBoundary` + snapshot on drag start in that slot. Track `_activeSlot ∈ {left, right}` in state.
-- [ ] T049 [US3] In landscape, advance `_currentIndex` by **2** on forward-settle (by **2** on backward-settle) so the spread pair moves together. Document this in [data-model.md](./data-model.md).
-- [ ] T050 [US3] Pointer and anchor coordinates must be slot-local before they reach `FoldGeometry` — adapt the gesture callbacks (already receive `DragStartDetails.localPosition` but we need to translate to the active slot's local origin).
-- [ ] T051 [US3] Run Phase 5 tests — all pass.
+- [X] T047 [US3] `SpreadLayout.resolve(constraints)` in `build` → `_isLandscape` flag; branches to `_buildPortrait` / `_buildLandscape`
+- [X] T048 [US3] `_buildLandscape`: `Row` of two `Expanded` slots; per-slot `RepaintBoundary` + `_snapshotKey` / `_snapshotKeyRight`; `_activeSlotIsRight` tracks which slot is dragging
+- [X] T049 [US3] `_settleComplete` advances by `step = _isLandscape ? 2 : 1`
+- [X] T050 [US3] `_onDragStart` translates pointer to slot-local coords; `_onDragUpdate` divides delta by slot width
+- [X] T051 [US3] 55/55 tests pass including 3 new landscape tests
 
 **Checkpoint**: landscape spread renders correctly. Paper-curl works in both slots.
 

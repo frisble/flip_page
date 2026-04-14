@@ -3,15 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('renders initial page', (tester) async {
+  testWidgets('renders initial page in portrait', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
-          body: FlipPage(
-            pages: [
-              Text('hello'),
-              Text('world'),
-            ],
+          body: SizedBox(
+            width: 400,
+            height: 600,
+            child: FlipPage(
+              pages: [
+                Text('hello'),
+                Text('world'),
+              ],
+            ),
           ),
         ),
       ),
