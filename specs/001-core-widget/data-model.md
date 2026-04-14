@@ -67,11 +67,11 @@ Transient runtime state during a flip.
 |---|---|---|
 | `_animationController` | `AnimationController` | drives settle animation |
 | `_currentIndex` | `int` | index of the page currently shown (or the left slot in landscape) |
-| `_progress` | `double` | curl progress, `[0.0, 1.0]`. `0` = idle; `1` = flip fully completed |
 | `_direction` | `FlipDirection` | `none` / `forward` / `backward` |
-| `_anchor` | `FlipCorner?` | the drag-anchor corner, null when idle |
-| `_pointer` | `Offset?` | current pointer position in slot-local coords, null when idle |
-| `_foldGeometry` | `FoldGeometry?` | derived from `_anchor` + `_pointer` each frame while dragging |
+| `_anchorOffset` | `Offset?` | perimeter-clamped drag start point (per R11 revised); null when idle |
+| `_pointer` | `Offset?` | raw finger position in slot-local coords, updated every frame during drag (per R13) |
+| `_pointerAtRelease` | `Offset?` | snapshot of `_pointer` at drag end, used as settle interpolation start |
+| `_settleTarget` | `Offset?` | interpolation end for the settle animation (opposite-point for complete, anchor for revert) |
 | `_outgoingSnapshot` | `ui.Image?` | captured at drag-start via `toImageSync`; released when `_progress == 0` |
 | `_snapshotKey` | `GlobalKey` | attached to the `RepaintBoundary` wrapping the idle current page |
 | `_effectiveController` | `FlipPageController` | `widget.controller ?? _ownedController` |
@@ -79,8 +79,8 @@ Transient runtime state during a flip.
 
 **Invariants**:
 
-1. `_progress == 0` ⇔ idle ⇔ `_anchor == null` ⇔ `_pointer == null` ⇔ `_outgoingSnapshot == null`.
-2. During a drag: `_progress > 0` AND `_animationController.isAnimating == false`.
+1. `_anchorOffset == null` ⇔ idle ⇔ `_pointer == null` ⇔ `_outgoingSnapshot == null`.
+2. During a drag: `_pointer != _anchorOffset` AND `_animationController.isAnimating == false`.
 3. During settle: `_animationController.isAnimating == true` AND no pointer down.
 4. `onPageChanged` fires **exactly once** per settled transition, **after** `_currentIndex` is updated.
 5. Single emission site: `_emitSettled(int newIndex)` is the only method that calls `widget.onPageChanged` and `SemanticsService.announce`.
@@ -92,15 +92,14 @@ Inputs:
 | Field | Type |
 |---|---|
 | `slotSize` | `Size` |
-| `anchor` | `FlipCorner` |
-| `pointer` | `Offset` (slot-local, clamped to the valid half-plane) |
+| `anchor` | `Offset` — any point on the slot perimeter (continuous, per revised R11) |
+| `pointer` | `Offset` — raw finger position in slot-local coords (live 2-D tracking, per R13) |
 
 Derived (lazy getters):
 
 | Field | Type | Description |
 |---|---|---|
-| `anchorPosition` | `Offset` | corner coord in slot-local space |
-| `foldLine` | `({Offset a, Offset b})?` | perpendicular bisector of `(anchorPosition, pointer)`, or `null` when pointer equals anchor |
+| `foldLine` | `({Offset a, Offset b})?` | perpendicular bisector of `(anchor, pointer)`, or `null` when pointer equals anchor |
 | `reflectionMatrix` | `Matrix4` | 2-D reflection across `foldLine`, embedded in 4×4 |
 | `unfoldedRegion` | `Path` | slot rect clipped to the pointer-side half-plane of `foldLine` |
 | `foldedPolygon` | `Path` | slot rect clipped to the anchor-side half-plane |
@@ -138,7 +137,8 @@ Derived (lazy getters):
 /// Flip direction during a drag / settle.
 enum FlipDirection { none, forward, backward }
 
-/// Which corner of the slot is the drag anchor (R11).
+/// Retained as an internal helper for controller-driven animations
+/// (animateTo picks a default corner). No longer a FoldGeometry input.
 enum FlipCorner { topLeft, topRight, bottomRight, bottomLeft }
 
 /// Layout mode decided by SpreadLayout.resolve (R5). Internal-only.

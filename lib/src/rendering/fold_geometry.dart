@@ -1,15 +1,14 @@
 import 'package:flutter/widgets.dart';
 
-import 'flip_corner.dart';
-
 /// Direction of an in-progress flip.
 enum FlipDirection { none, forward, backward }
 
 /// Pure value object describing a paper-fold state.
 ///
-/// Given a slot size, an anchor corner, and a current pointer position,
-/// computes the fold line (perpendicular bisector of `anchor → pointer`)
-/// and the derived clip paths / reflection matrix used to render the peel.
+/// Given a slot size, an anchor point (any [Offset] on the slot perimeter),
+/// and a current pointer position, computes the fold line (perpendicular
+/// bisector of `anchor → pointer`) and the derived clip paths / reflection
+/// matrix used to render the peel.
 ///
 /// All math is pure; safe to construct anywhere and 100% unit-testable.
 /// See research.md R1 for the algorithm.
@@ -20,10 +19,7 @@ class FoldGeometry {
     required this.anchor,
     required this.pointer,
   }) {
-    final Offset anchorPos = anchor.position(slotSize);
-    _anchorPosition = anchorPos;
-
-    final Offset v = pointer - anchorPos;
+    final Offset v = pointer - anchor;
     final double vLen = v.distance;
     if (vLen < _epsilon) {
       // Identity case: no fold.
@@ -39,8 +35,8 @@ class FoldGeometry {
 
     final Offset normal = Offset(v.dx / vLen, v.dy / vLen);
     final Offset mid = Offset(
-      (anchorPos.dx + pointer.dx) / 2,
-      (anchorPos.dy + pointer.dy) / 2,
+      (anchor.dx + pointer.dx) / 2,
+      (anchor.dy + pointer.dy) / 2,
     );
 
     // Fold line represented by two points far apart along the perpendicular
@@ -87,14 +83,14 @@ class FoldGeometry {
   /// Slot rendering size.
   final Size slotSize;
 
-  /// Drag-anchor corner.
-  final FlipCorner anchor;
+  /// Drag-anchor point in slot-local coordinates.
+  ///
+  /// Can be any point on the slot perimeter (continuous anchor per R11).
+  final Offset anchor;
 
-  /// Current pointer position in slot-local coordinates. Caller is
-  /// responsible for clamping the pointer to the slot's valid half-plane.
+  /// Current pointer position in slot-local coordinates.
   final Offset pointer;
 
-  late final Offset _anchorPosition;
   late final ({Offset a, Offset b})? _foldLine;
   late final Matrix4 _reflectionMatrix;
   late final Path _unfoldedRegion;
@@ -103,8 +99,8 @@ class FoldGeometry {
   late final Path _shadowPath;
   late final double _progress;
 
-  /// Anchor corner position in slot-local coords.
-  Offset get anchorPosition => _anchorPosition;
+  /// Anchor position in slot-local coords (same as [anchor]).
+  Offset get anchorPosition => anchor;
 
   /// Fold line defined by two points, or `null` when pointer equals anchor.
   ({Offset a, Offset b})? get foldLine => _foldLine;

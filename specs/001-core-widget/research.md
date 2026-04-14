@@ -149,7 +149,6 @@ class FlipPage extends StatefulWidget {
     Curve animationCurve = Curves.easeOutCubic,
     double? edgeHitZoneFraction,                    // default 0.4
     Color backTintColor = const Color(0x66000000),  // paper back (R12)
-    double flipCornerFraction = 0.5,                // top/bottom corner split (R11)
     Color shadowColor = const Color(0x33000000),
   });
 }
@@ -206,31 +205,47 @@ class FlipPageController extends ChangeNotifier {
 
 ---
 
-## R11 — Drag-anchor corner selection
+## R11 — Drag-anchor selection *(revised — continuous edge anchor)*
 
-**Decision**: At drag start, pick the anchor corner `C0` from the pointer quadrant in slot-local coordinates:
+**Decision**: At drag start, the anchor `C0` is the point on the slot rectangle perimeter **nearest** to `details.localPosition`. Any edge point or corner is valid — not just the 4 discrete corners. The anchor is locked at drag start and does not move.
 
-| Pointer quadrant | `FlipCorner` | Flip direction |
-|---|---|---|
-| top-right | `topRight` | forward |
-| bottom-right | `bottomRight` | forward |
-| top-left | `topLeft` | backward |
-| bottom-left | `bottomLeft` | backward |
+**Nearest-perimeter algorithm**: project the pointer onto each of the 4 edges, pick the projection with the shortest distance. If the pointer is exactly on the perimeter, use it directly.
 
-The horizontal split is slot-midpoint; the vertical split uses `flipCornerFraction × slot.height` (default `0.5`), giving users a knob to bias toward top-corner or bottom-corner peels. Anchor is locked at drag-start — doesn't swap mid-drag even if the pointer crosses a quadrant boundary.
+**Direction determination**: based on which half of the perimeter the anchor lands on:
+- `anchor.dx >= slotWidth / 2` → forward (right-side anchor peels toward the left)
+- `anchor.dx < slotWidth / 2` → backward (left-side anchor peels toward the right)
 
-In landscape spread, rules apply per slot (right slot → forward anchors, left slot → backward anchors).
+In landscape spread: the slot is the half-width slot, so the same rule applies per-slot. Right slot always → forward, left slot always → backward.
 
-**Rationale**: Matches natural gesture — users expect the corner nearest their finger to peel up. Four-corner selection is the iBooks / turn.js standard.
+**Rationale**: Users should be able to initiate a peel from any point on any edge — top, bottom, right, left, or any corner. Restricting to 4 discrete corners felt rigid; the reference UX (physical books, turn.js) allows grabbing anywhere along the page edge. Continuous anchor is the natural extension.
 
 **Alternatives considered**:
-- *Fixed anchor (always bottom-right for forward)*. Rejected — dragging from the top with the peel originating from the bottom feels disconnected.
-- *Edge-based fold (whole right edge as fold line)*. Rejected — produces a uniform curl, which is what the earlier MVP did. Doesn't match the reference UX.
-- *Continuous anchor (anchor follows pointer vertical position)*. Interesting but unstable — small vertical pointer moves would swing the fold line. Defer.
+- *4 discrete corners from pointer quadrant* (previous R11). Shipped and worked, but user feedback: "I should be able to flip from all the main border points." Superseded.
+- *Fixed anchor (always bottom-right)*. Rejected earlier — still rejected.
 
 **Degenerate cases**:
-- Pointer exactly at `C0`: no fold defined — render identity (`_progress == 0`).
-- Pointer past opposite edge of the slot: clamp to the slot's bounding half-plane so the fold produces a valid polygon.
+- Pointer exactly at anchor after clamping: no fold → identity (idle render).
+- Anchor at slot center (impossible — perimeter clamp guarantees an edge point).
+
+---
+
+## R13 — Live 2-D pointer tracking *(new)*
+
+**Decision**: During the drag, `_FlipPageState` stores the raw `details.localPosition` (slot-local) as the pointer `P` each frame. `FoldGeometry` receives the actual 2-D pointer, not a 1-D progress scalar mapped to a diagonal. The fold tracks the finger continuously in both axes.
+
+**Progress derivation**: a scalar `progress ∈ [0, 1]` is still derived from `(P - C0).distance / maxDistance` (where `maxDistance` is the distance from anchor to the diagonally-opposite point). This scalar is used **only** for the settle decision (threshold + velocity check), not for rendering.
+
+**Settle animation**: on drag end, the `AnimationController` still drives a 0→1 scalar, but the rendering maps it to an `Offset` interpolation:
+- **Complete**: `Offset.lerp(pointerAtRelease, targetOffset, t)` where `targetOffset = Offset(slotWidth - anchor.dx, slotHeight - anchor.dy)` (diametrically opposite anchor through the slot center).
+- **Revert**: `Offset.lerp(pointerAtRelease, anchor, t)`.
+
+This means the page "continues" from where the user released (not from a snapped position), and the settle path matches the user's drag trajectory.
+
+**Rationale**: The previous 1-D progress model locked the fold to a single diagonal regardless of finger movement. Moving the finger sideways or back produced no visual change. Users expect the peel to follow the finger — enlarging when dragged further, shrinking when dragged back, changing angle when dragged sideways.
+
+**Alternatives considered**:
+- *1-D progress along the anchor diagonal* (previous approach). Shipped; insufficient per user feedback.
+- *Pointer tracking with a spring model* (smooth out jitter). Interesting but adds complexity. Raw tracking is smooth enough at 60 fps. Defer.
 
 ---
 

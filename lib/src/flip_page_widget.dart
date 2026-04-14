@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
@@ -5,24 +6,17 @@ import 'package:flutter/widgets.dart';
 
 import 'flip_page_controller.dart';
 import 'gestures/flip_drag_recognizer.dart';
-import 'rendering/flip_corner.dart';
 import 'layout/spread_layout.dart';
+import 'rendering/flip_corner.dart';
 import 'rendering/fold_geometry.dart';
 import 'rendering/fold_painter.dart';
 
 /// A page-turning widget with a drag-driven paper-curl animation.
 ///
-/// In v0.1:
-/// - Portrait layouts show one page at a time.
-/// - Landscape two-page spread is planned for User Story 3; this MVP
-///   renders portrait only.
-/// - Flips are initiated by a horizontal drag. The drag-anchor corner is
-///   picked from the pointer position at drag start (4 corners in portrait,
-///   see [FlipCorner.pickFromPointer]). Releasing past the halfway
-///   threshold (or with sufficient velocity) completes the flip; otherwise
-///   it reverts.
-///
-/// See `specs/001-core-widget/quickstart.md` for usage snippets.
+/// Flips are initiated by dragging from any edge or corner. The anchor is the
+/// nearest point on the slot perimeter to the drag-start position. The fold
+/// follows the finger in real time (2-D tracking). Releasing past the halfway
+/// threshold completes the flip; otherwise it reverts.
 class FlipPage extends StatefulWidget {
   /// Creates a [FlipPage] with an ordered list of [pages].
   const FlipPage({
@@ -35,7 +29,6 @@ class FlipPage extends StatefulWidget {
     this.animationCurve = Curves.easeOutCubic,
     this.backTintColor = const Color(0x66000000),
     this.shadowColor = const Color(0x33000000),
-    this.flipCornerFraction = 0.5,
     this.edgeHitZoneFraction,
   });
 
@@ -43,9 +36,6 @@ class FlipPage extends StatefulWidget {
   final List<Widget> pages;
 
   /// Optional controller for programmatic navigation.
-  ///
-  /// If `null`, the widget owns an internal controller. If supplied, the
-  /// caller is responsible for [FlipPageController.dispose].
   final FlipPageController? controller;
 
   /// Invoked once per settled page transition with the new index.
@@ -61,16 +51,10 @@ class FlipPage extends StatefulWidget {
   final Curve animationCurve;
 
   /// Tint blended over the reflected (back) side of the peeling page.
-  ///
-  /// Defaults to a semi-transparent black that reads as "paper back".
   final Color backTintColor;
 
   /// Colour of the soft drop shadow drawn along the fold line.
   final Color shadowColor;
-
-  /// Vertical split (in `[0, 1]`) between top-corner and bottom-corner
-  /// anchors. Passed to [FlipCorner.pickFromPointer] at drag start.
-  final double flipCornerFraction;
 
   /// Fraction of the slot width on each side that is sensitive to flip
   /// drags. `null` defaults to `0.4` (outer 40% on each side).
@@ -86,17 +70,27 @@ class _FlipPageState extends State<FlipPage>
   late FlipPageController _effectiveController;
   FlipPageController? _ownedController;
   late int _currentIndex;
-  double _progress = 0;
+
+  // Drag / settle state.
   FlipDirection _direction = FlipDirection.none;
-  FlipCorner? _anchor;
+  Offset? _anchorOffset; // perimeter-clamped drag start point
+  Offset? _pointer; // live finger position (slot-local)
+  Offset? _settleFrom; // pointer snapshot at drag-end (settle start)
+  Offset? _settleTo; // settle end (opposite point or anchor)
   ui.Image? _outgoingSnapshot;
-  final GlobalKey _snapshotKey = GlobalKey(debugLabel: 'flip_page.snapshot');
-  final GlobalKey _snapshotKeyRight = GlobalKey(debugLabel: 'flip_page.snapshot_r');
+
+  final GlobalKey _snapshotKey =
+      GlobalKey(debugLabel: 'flip_page.snapshot');
+  final GlobalKey _snapshotKeyRight =
+      GlobalKey(debugLabel: 'flip_page.snapshot_r');
   bool _isLandscape = false;
   bool _activeSlotIsRight = true;
+  Size _lastSlotSize = Size.zero;
 
   static const double _flingVelocityThreshold = 600;
   static const double _completeThreshold = 0.5;
+
+  // ────────────── Lifecycle ──────────────
 
   @override
   void initState() {
@@ -144,6 +138,8 @@ class _FlipPageState extends State<FlipPage>
     super.dispose();
   }
 
+  // ────────────── Controller wiring ──────────────
+
   void _initController() {
     if (widget.controller != null) {
       _effectiveController = widget.controller!;
@@ -169,19 +165,25 @@ class _FlipPageState extends State<FlipPage>
   }
 
   Future<void> _controllerAnimateTo(int index) async {
-    // Determine direction for the animation.
     final bool forward = index > _currentIndex;
-    final FlipCorner anchor =
-        forward ? FlipCorner.bottomRight : FlipCorner.bottomLeft;
     final FlipDirection dir =
         forward ? FlipDirection.forward : FlipDirection.backward;
+    final Size slotSize = _lastSlotSize;
+
+    // Use a default corner anchor for controller-driven animations.
+    final FlipCorner corner =
+        forward ? FlipCorner.bottomRight : FlipCorner.bottomLeft;
+    final Offset anchor = corner.position(slotSize);
+    final Offset target = _oppositePoint(anchor, slotSize);
 
     final ui.Image? snapshot = _captureSnapshot();
 
     setState(() {
       _direction = dir;
-      _anchor = anchor;
-      _progress = 0;
+      _anchorOffset = anchor;
+      _pointer = anchor;
+      _settleFrom = anchor;
+      _settleTo = target;
       _outgoingSnapshot?.dispose();
       _outgoingSnapshot = snapshot;
     });
@@ -199,14 +201,57 @@ class _FlipPageState extends State<FlipPage>
     _settleComplete(targetIndex: index);
   }
 
+  // ────────────── Helpers ──────────────
+
   int _clampIndex(int i) {
     if (widget.pages.isEmpty) return 0;
     return i.clamp(0, widget.pages.length - 1);
   }
 
-  void _onTick() {
-    setState(() => _progress = _animController.value);
+  /// Diametrically opposite point through the slot center.
+  static Offset _oppositePoint(Offset anchor, Size slot) =>
+      Offset(slot.width - anchor.dx, slot.height - anchor.dy);
+
+  /// Clamp a point to the nearest location on the slot rectangle perimeter.
+  static Offset _clampToPerimeter(Offset p, Size size) {
+    final double dLeft = p.dx;
+    final double dRight = size.width - p.dx;
+    final double dTop = p.dy;
+    final double dBottom = size.height - p.dy;
+    final double minD = [dLeft, dRight, dTop, dBottom].reduce(math.min);
+    if (minD == dLeft) {
+      return Offset(0, p.dy.clamp(0, size.height));
+    }
+    if (minD == dRight) {
+      return Offset(size.width, p.dy.clamp(0, size.height));
+    }
+    if (minD == dTop) {
+      return Offset(p.dx.clamp(0, size.width), 0);
+    }
+    return Offset(p.dx.clamp(0, size.width), size.height);
   }
+
+  /// Derive a scalar progress from the current pointer for threshold checks.
+  double _deriveProgress(Size slotSize) {
+    final Offset anchor = _anchorOffset ?? Offset.zero;
+    final Offset ptr = _pointer ?? anchor;
+    final double maxDist =
+        (anchor - _oppositePoint(anchor, slotSize)).distance;
+    if (maxDist < 1e-6) return 0;
+    return ((ptr - anchor).distance / maxDist).clamp(0.0, 1.0);
+  }
+
+  // ────────────── Tick (settle animation) ──────────────
+
+  void _onTick() {
+    final Offset from = _settleFrom ?? _anchorOffset ?? Offset.zero;
+    final Offset to = _settleTo ?? _anchorOffset ?? Offset.zero;
+    setState(() {
+      _pointer = Offset.lerp(from, to, _animController.value);
+    });
+  }
+
+  // ────────────── Gesture handlers ──────────────
 
   void _onDragStart(DragStartDetails details) {
     if (widget.pages.length <= 1) return;
@@ -215,19 +260,19 @@ class _FlipPageState extends State<FlipPage>
     final Size? fullSize = context.size;
     if (fullSize == null) return;
 
-    // In landscape the pointer's x is in the full-width coordinate space.
-    // Determine which slot the pointer landed in.
+    // Slot detection for landscape.
     final double localX = details.localPosition.dx;
     if (_isLandscape) {
       _activeSlotIsRight = localX >= fullSize.width / 2;
     } else {
-      _activeSlotIsRight = true; // meaningless in portrait
+      _activeSlotIsRight = true;
     }
 
-    // Remap pointer to slot-local coordinates for corner selection.
     final Size slotSize = _isLandscape
         ? Size(fullSize.width / 2, fullSize.height)
         : fullSize;
+
+    // Remap pointer to slot-local coords.
     final Offset slotLocal = _isLandscape && _activeSlotIsRight
         ? Offset(localX - fullSize.width / 2, details.localPosition.dy)
         : Offset(
@@ -235,20 +280,17 @@ class _FlipPageState extends State<FlipPage>
             details.localPosition.dy,
           );
 
-    final FlipCorner corner = FlipCorner.pickFromPointer(
-      slotLocal,
-      slotSize,
-      cornerFraction: widget.flipCornerFraction,
-    );
+    // Continuous anchor: nearest perimeter point.
+    final Offset anchor = _clampToPerimeter(slotLocal, slotSize);
 
-    // In landscape: right-slot drag → forward, left-slot drag → backward.
+    // Direction from anchor horizontal position.
     final FlipDirection candidate;
     if (_isLandscape) {
       candidate = _activeSlotIsRight
           ? FlipDirection.forward
           : FlipDirection.backward;
     } else {
-      candidate = corner.isRightSide
+      candidate = anchor.dx >= slotSize.width / 2
           ? FlipDirection.forward
           : FlipDirection.backward;
     }
@@ -262,45 +304,66 @@ class _FlipPageState extends State<FlipPage>
       return;
     }
 
-    // Capture snapshot from the appropriate slot's RepaintBoundary.
     final GlobalKey captureKey =
         _isLandscape && _activeSlotIsRight ? _snapshotKeyRight : _snapshotKey;
     final ui.Image? snapshot = _captureSnapshotFrom(captureKey);
 
     setState(() {
       _direction = candidate;
-      _anchor = corner;
-      _progress = 0;
+      _anchorOffset = anchor;
+      _pointer = slotLocal; // raw 2-D pointer
+      _settleFrom = null;
+      _settleTo = null;
       _outgoingSnapshot?.dispose();
       _outgoingSnapshot = snapshot;
     });
   }
 
   void _onDragUpdate(DragUpdateDetails details) {
-    if (_direction == FlipDirection.none) return;
-    final double fullWidth = context.size?.width ?? 1;
-    final double slotWidth = _isLandscape ? fullWidth / 2 : fullWidth;
-    final int sign = _direction == FlipDirection.forward ? -1 : 1;
-    final double delta = sign * details.delta.dx / slotWidth;
-    setState(() {
-      _progress = (_progress + delta).clamp(0.0, 1.0);
-    });
+    if (_direction == FlipDirection.none || _anchorOffset == null) return;
+    final Size? fullSize = context.size;
+    if (fullSize == null) return;
+
+    // Remap to slot-local coords.
+    final double localX = details.localPosition.dx;
+    final Offset slotLocal = _isLandscape && _activeSlotIsRight
+        ? Offset(localX - fullSize.width / 2, details.localPosition.dy)
+        : Offset(
+            _isLandscape ? localX : details.localPosition.dx,
+            details.localPosition.dy,
+          );
+
+    setState(() => _pointer = slotLocal);
   }
 
   void _onDragEnd(DragEndDetails details) {
-    if (_direction == FlipDirection.none) return;
+    if (_direction == FlipDirection.none || _anchorOffset == null) return;
+    final Size? fullSize = context.size;
+    if (fullSize == null) return;
 
+    final Size slotSize = _isLandscape
+        ? Size(fullSize.width / 2, fullSize.height)
+        : fullSize;
+
+    final double progress = _deriveProgress(slotSize);
     final double velocity = details.velocity.pixelsPerSecond.dx;
     final int sign = _direction == FlipDirection.forward ? -1 : 1;
     final double signedVelocity = sign * velocity;
-    final bool shouldComplete = _progress >= _completeThreshold ||
+    final bool shouldComplete =
+        progress >= _completeThreshold ||
         signedVelocity >= _flingVelocityThreshold;
-    final double target = shouldComplete ? 1.0 : 0.0;
 
-    _animController.value = _progress;
+    final Offset from = _pointer ?? _anchorOffset!;
+    final Offset to = shouldComplete
+        ? _oppositePoint(_anchorOffset!, slotSize)
+        : _anchorOffset!;
+
+    _settleFrom = from;
+    _settleTo = to;
+    _animController.value = 0;
     _animController
         .animateTo(
-      target,
+      1.0,
       duration: widget.animationDuration,
       curve: widget.animationCurve,
     )
@@ -314,10 +377,13 @@ class _FlipPageState extends State<FlipPage>
     });
   }
 
+  // ────────────── Settle ──────────────
+
   void _settleComplete({int? targetIndex}) {
     final int step = _isLandscape ? 2 : 1;
     final int newIndex = targetIndex ??
-        (_currentIndex + (_direction == FlipDirection.forward ? step : -step));
+        (_currentIndex +
+            (_direction == FlipDirection.forward ? step : -step));
     setState(() {
       _currentIndex = newIndex;
       _resetDragState();
@@ -336,12 +402,16 @@ class _FlipPageState extends State<FlipPage>
   }
 
   void _resetDragState() {
-    _progress = 0;
     _direction = FlipDirection.none;
-    _anchor = null;
+    _anchorOffset = null;
+    _pointer = null;
+    _settleFrom = null;
+    _settleTo = null;
     _outgoingSnapshot?.dispose();
     _outgoingSnapshot = null;
   }
+
+  // ────────────── Snapshot ──────────────
 
   ui.Image? _captureSnapshot() => _captureSnapshotFrom(_snapshotKey);
 
@@ -358,6 +428,8 @@ class _FlipPageState extends State<FlipPage>
     }
   }
 
+  // ────────────── Build ──────────────
+
   @override
   Widget build(BuildContext context) {
     if (widget.pages.isEmpty) {
@@ -371,6 +443,9 @@ class _FlipPageState extends State<FlipPage>
         final double slotWidth = _isLandscape
             ? constraints.biggest.width / 2
             : constraints.biggest.width;
+        _lastSlotSize = _isLandscape
+            ? Size(slotWidth, constraints.biggest.height)
+            : constraints.biggest;
         return RawGestureDetector(
           gestures: <Type, GestureRecognizerFactory>{
             FlipDragRecognizer:
@@ -400,51 +475,41 @@ class _FlipPageState extends State<FlipPage>
     );
   }
 
-  // --------------- Portrait (single page) ---------------
+  // ────────────── Portrait ──────────────
+
+  bool get _isDragging =>
+      _direction != FlipDirection.none &&
+      _anchorOffset != null &&
+      _pointer != null &&
+      _pointer != _anchorOffset;
 
   Widget _buildPortrait(Size slotSize) {
-    final bool dragging =
-        _direction != FlipDirection.none && _progress > 0;
-
-    if (!dragging) {
-      return Semantics(
-        label: 'Page ${_currentIndex + 1} of ${widget.pages.length}',
-        liveRegion: true,
-        child: RepaintBoundary(
-          key: _snapshotKey,
-          child: SizedBox.expand(child: widget.pages[_currentIndex]),
-        ),
-      );
+    if (!_isDragging) {
+      return _idlePage(_currentIndex, _snapshotKey);
     }
-
-    return _buildDragOverlay(slotSize, _currentIndex, _isLandscape);
+    return _buildDragOverlay(slotSize, _currentIndex);
   }
 
-  // --------------- Landscape (two-page spread) ---------------
+  // ────────────── Landscape ──────────────
 
   Widget _buildLandscape(Size fullSize) {
     final int leftIndex = _currentIndex;
     final int rightIndex = _currentIndex + 1;
     final bool hasRight = rightIndex < widget.pages.length;
-    final bool dragging =
-        _direction != FlipDirection.none && _progress > 0;
     final Size slotSize = Size(fullSize.width / 2, fullSize.height);
 
     Widget leftSlot;
     Widget rightSlot;
 
-    if (dragging && _activeSlotIsRight && hasRight) {
-      // Right slot is being flipped.
+    if (_isDragging && _activeSlotIsRight && hasRight) {
       leftSlot = _idlePage(leftIndex, _snapshotKey);
-      rightSlot = _buildDragOverlay(slotSize, rightIndex, true);
-    } else if (dragging && !_activeSlotIsRight) {
-      // Left slot is being flipped.
-      leftSlot = _buildDragOverlay(slotSize, leftIndex, true);
+      rightSlot = _buildDragOverlay(slotSize, rightIndex);
+    } else if (_isDragging && !_activeSlotIsRight) {
+      leftSlot = _buildDragOverlay(slotSize, leftIndex);
       rightSlot = hasRight
           ? _idlePage(rightIndex, _snapshotKeyRight)
           : const SizedBox.expand();
     } else {
-      // Idle.
       leftSlot = _idlePage(leftIndex, _snapshotKey);
       rightSlot = hasRight
           ? _idlePage(rightIndex, _snapshotKeyRight)
@@ -470,29 +535,25 @@ class _FlipPageState extends State<FlipPage>
     );
   }
 
-  // --------------- Shared drag overlay ---------------
+  // ────────────── Drag overlay ──────────────
 
-  Widget _buildDragOverlay(Size slotSize, int outgoingIndex, bool inSpread) {
+  Widget _buildDragOverlay(Size slotSize, int outgoingIndex) {
     final ui.Image? snapshot = _outgoingSnapshot;
     if (snapshot == null) {
       return SizedBox.expand(child: widget.pages[outgoingIndex]);
     }
 
     final bool isForward = _direction == FlipDirection.forward;
-    final int step = inSpread && _isLandscape ? 2 : 1;
+    final int step = _isLandscape ? 2 : 1;
     final int peekIndex = isForward
         ? outgoingIndex + step
         : outgoingIndex - step;
     final int safePeekIndex = peekIndex.clamp(0, widget.pages.length - 1);
 
-    final FlipCorner anchor = _anchor ?? _defaultAnchorFor(isForward);
-    final Offset anchorPos = anchor.position(slotSize);
-    final Offset oppositePos = anchor.opposite.position(slotSize);
-    final Offset pointer = Offset.lerp(anchorPos, oppositePos, _progress)!;
     final FoldGeometry geometry = FoldGeometry(
       slotSize: slotSize,
-      anchor: anchor,
-      pointer: pointer,
+      anchor: _anchorOffset!,
+      pointer: _pointer!,
     );
 
     return Stack(
@@ -511,7 +572,4 @@ class _FlipPageState extends State<FlipPage>
       ],
     );
   }
-
-  FlipCorner _defaultAnchorFor(bool forward) =>
-      forward ? FlipCorner.bottomRight : FlipCorner.bottomLeft;
 }
