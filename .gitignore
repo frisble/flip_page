@@ -29,3 +29,10 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 /build/
 /coverage/
+
+# Personal tooling (not for public repo)
+.claude/
+.specify/
+specs/
+CLAUDE.md
+CONVERSATION.md
