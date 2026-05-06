@@ -1,3 +1,8 @@
+## 0.1.1
+
+- Fix: short flicks on real touch devices now register reliably. Default touch slop lowered to 6.0 (from Flutter's 18.0) so the recognizer claims the arena before the user lifts. Previously, iOS Simulator (mouse pointer, ~1 px slop) worked while real iOS/Android devices appeared unresponsive on short swipes.
+- New: `FlipPage.touchSlop` parameter to tune the drag threshold per app.
+
 ## 0.1.0
 
 - Paper-curl page-flip animation with fold line, reflected back-of-page tint, and drop shadow.

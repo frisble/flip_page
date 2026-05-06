@@ -30,6 +30,7 @@ class FlipPage extends StatefulWidget {
     this.backTintColor = const Color(0x66000000),
     this.shadowColor = const Color(0x33000000),
     this.edgeHitZoneFraction,
+    this.touchSlop,
   });
 
   /// Ordered list of pages to display. May be empty.
@@ -59,6 +60,15 @@ class FlipPage extends StatefulWidget {
   /// Fraction of the slot width on each side that is sensitive to flip
   /// drags. `null` defaults to `0.4` (outer 40% on each side).
   final double? edgeHitZoneFraction;
+
+  /// Horizontal distance (logical px) the finger must travel before the
+  /// flip recognizer claims the gesture arena.
+  ///
+  /// `null` defaults to [kFlipPageDefaultTouchSlop] (6.0). Lower than
+  /// Flutter's [kTouchSlop] (18.0) so short real-device flicks register —
+  /// the 18 px default tends to swallow brief touches that work fine in
+  /// the iOS Simulator (which routes mouse pointers with ~1 px slop).
+  final double? touchSlop;
 
   @override
   State<FlipPage> createState() => _FlipPageState();
@@ -454,12 +464,16 @@ class _FlipPageState extends State<FlipPage>
                 edgeHitZoneFraction:
                     widget.edgeHitZoneFraction ?? 0.4,
                 slotWidth: slotWidth,
+                touchSlop:
+                    widget.touchSlop ?? kFlipPageDefaultTouchSlop,
               ),
               (FlipDragRecognizer instance) {
                 instance
                   ..edgeHitZoneFraction =
                       widget.edgeHitZoneFraction ?? 0.4
                   ..slotWidth = slotWidth
+                  ..touchSlop =
+                      widget.touchSlop ?? kFlipPageDefaultTouchSlop
                   ..onStart = _onDragStart
                   ..onUpdate = _onDragUpdate
                   ..onEnd = _onDragEnd;

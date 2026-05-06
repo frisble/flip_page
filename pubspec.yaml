@@ -1,6 +1,6 @@
 name: flip_page
 description: Realistic page-flip widget for Flutter with physics-based curl animation and full widget interactivity.
-version: 0.1.0
+version: 0.1.1
 homepage: https://github.com/frisble/flip_page
 repository: https://github.com/frisble/flip_page
 issue_tracker: https://github.com/frisble/flip_page/issues
