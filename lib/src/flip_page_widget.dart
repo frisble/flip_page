@@ -30,7 +30,6 @@ class FlipPage extends StatefulWidget {
     this.backTintColor = const Color(0x66000000),
     this.shadowColor = const Color(0x33000000),
     this.edgeHitZoneFraction,
-    this.touchSlop,
   });
 
   /// Ordered list of pages to display. May be empty.
@@ -61,15 +60,6 @@ class FlipPage extends StatefulWidget {
   /// drags. `null` defaults to `0.4` (outer 40% on each side).
   final double? edgeHitZoneFraction;
 
-  /// Horizontal distance (logical px) the finger must travel before the
-  /// flip recognizer claims the gesture arena.
-  ///
-  /// `null` defaults to [kFlipPageDefaultTouchSlop] (6.0). Lower than
-  /// Flutter's [kTouchSlop] (18.0) so short real-device flicks register —
-  /// the 18 px default tends to swallow brief touches that work fine in
-  /// the iOS Simulator (which routes mouse pointers with ~1 px slop).
-  final double? touchSlop;
-
   @override
   State<FlipPage> createState() => _FlipPageState();
 }
@@ -89,10 +79,10 @@ class _FlipPageState extends State<FlipPage>
   Offset? _settleTo; // settle end (opposite point or anchor)
   ui.Image? _outgoingSnapshot;
 
-  final GlobalKey _snapshotKey =
-      GlobalKey(debugLabel: 'flip_page.snapshot');
-  final GlobalKey _snapshotKeyRight =
-      GlobalKey(debugLabel: 'flip_page.snapshot_r');
+  final GlobalKey _snapshotKey = GlobalKey(debugLabel: 'flip_page.snapshot');
+  final GlobalKey _snapshotKeyRight = GlobalKey(
+    debugLabel: 'flip_page.snapshot_r',
+  );
   bool _isLandscape = false;
   bool _activeSlotIsRight = true;
   Size _lastSlotSize = Size.zero;
@@ -176,13 +166,15 @@ class _FlipPageState extends State<FlipPage>
 
   Future<void> _controllerAnimateTo(int index) async {
     final bool forward = index > _currentIndex;
-    final FlipDirection dir =
-        forward ? FlipDirection.forward : FlipDirection.backward;
+    final FlipDirection dir = forward
+        ? FlipDirection.forward
+        : FlipDirection.backward;
     final Size slotSize = _lastSlotSize;
 
     // Use a default corner anchor for controller-driven animations.
-    final FlipCorner corner =
-        forward ? FlipCorner.bottomRight : FlipCorner.bottomLeft;
+    final FlipCorner corner = forward
+        ? FlipCorner.bottomRight
+        : FlipCorner.bottomLeft;
     final Offset anchor = corner.position(slotSize);
     final Offset target = _oppositePoint(anchor, slotSize);
 
@@ -199,8 +191,9 @@ class _FlipPageState extends State<FlipPage>
     });
 
     final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
-    final Duration dur =
-        reduceMotion ? Duration.zero : widget.animationDuration;
+    final Duration dur = reduceMotion
+        ? Duration.zero
+        : widget.animationDuration;
     _animController.value = 0;
     await _animController.animateTo(
       1.0,
@@ -245,8 +238,7 @@ class _FlipPageState extends State<FlipPage>
   double _deriveProgress(Size slotSize) {
     final Offset anchor = _anchorOffset ?? Offset.zero;
     final Offset ptr = _pointer ?? anchor;
-    final double maxDist =
-        (anchor - _oppositePoint(anchor, slotSize)).distance;
+    final double maxDist = (anchor - _oppositePoint(anchor, slotSize)).distance;
     if (maxDist < 1e-6) return 0;
     return ((ptr - anchor).distance / maxDist).clamp(0.0, 1.0);
   }
@@ -306,7 +298,8 @@ class _FlipPageState extends State<FlipPage>
     }
 
     final int step = _isLandscape ? 2 : 1;
-    final bool atBoundary = (candidate == FlipDirection.forward &&
+    final bool atBoundary =
+        (candidate == FlipDirection.forward &&
             _currentIndex + step > widget.pages.length - 1) ||
         (candidate == FlipDirection.backward && _currentIndex - step < 0);
     if (atBoundary) {
@@ -314,8 +307,9 @@ class _FlipPageState extends State<FlipPage>
       return;
     }
 
-    final GlobalKey captureKey =
-        _isLandscape && _activeSlotIsRight ? _snapshotKeyRight : _snapshotKey;
+    final GlobalKey captureKey = _isLandscape && _activeSlotIsRight
+        ? _snapshotKeyRight
+        : _snapshotKey;
     final ui.Image? snapshot = _captureSnapshotFrom(captureKey);
 
     setState(() {
@@ -373,27 +367,27 @@ class _FlipPageState extends State<FlipPage>
     _animController.value = 0;
     _animController
         .animateTo(
-      1.0,
-      duration: widget.animationDuration,
-      curve: widget.animationCurve,
-    )
+          1.0,
+          duration: widget.animationDuration,
+          curve: widget.animationCurve,
+        )
         .whenComplete(() {
-      if (!mounted) return;
-      if (shouldComplete) {
-        _settleComplete();
-      } else {
-        _settleRevert();
-      }
-    });
+          if (!mounted) return;
+          if (shouldComplete) {
+            _settleComplete();
+          } else {
+            _settleRevert();
+          }
+        });
   }
 
   // ────────────── Settle ──────────────
 
   void _settleComplete({int? targetIndex}) {
     final int step = _isLandscape ? 2 : 1;
-    final int newIndex = targetIndex ??
-        (_currentIndex +
-            (_direction == FlipDirection.forward ? step : -step));
+    final int newIndex =
+        targetIndex ??
+        (_currentIndex + (_direction == FlipDirection.forward ? step : -step));
     setState(() {
       _currentIndex = newIndex;
       _resetDragState();
@@ -430,9 +424,7 @@ class _FlipPageState extends State<FlipPage>
     if (ro is! RenderRepaintBoundary) return null;
     if (ro.debugNeedsPaint) return null;
     try {
-      return ro.toImageSync(
-        pixelRatio: MediaQuery.devicePixelRatioOf(context),
-      );
+      return ro.toImageSync(pixelRatio: MediaQuery.devicePixelRatioOf(context));
     } on Object {
       return null;
     }
@@ -460,25 +452,19 @@ class _FlipPageState extends State<FlipPage>
           gestures: <Type, GestureRecognizerFactory>{
             FlipDragRecognizer:
                 GestureRecognizerFactoryWithHandlers<FlipDragRecognizer>(
-              () => FlipDragRecognizer(
-                edgeHitZoneFraction:
-                    widget.edgeHitZoneFraction ?? 0.4,
-                slotWidth: slotWidth,
-                touchSlop:
-                    widget.touchSlop ?? kFlipPageDefaultTouchSlop,
-              ),
-              (FlipDragRecognizer instance) {
-                instance
-                  ..edgeHitZoneFraction =
-                      widget.edgeHitZoneFraction ?? 0.4
-                  ..slotWidth = slotWidth
-                  ..touchSlop =
-                      widget.touchSlop ?? kFlipPageDefaultTouchSlop
-                  ..onStart = _onDragStart
-                  ..onUpdate = _onDragUpdate
-                  ..onEnd = _onDragEnd;
-              },
-            ),
+                  () => FlipDragRecognizer(
+                    edgeHitZoneFraction: widget.edgeHitZoneFraction ?? 0.4,
+                    slotWidth: slotWidth,
+                  ),
+                  (FlipDragRecognizer instance) {
+                    instance
+                      ..edgeHitZoneFraction = widget.edgeHitZoneFraction ?? 0.4
+                      ..slotWidth = slotWidth
+                      ..onStart = _onDragStart
+                      ..onUpdate = _onDragUpdate
+                      ..onEnd = _onDragEnd;
+                  },
+                ),
           },
           behavior: HitTestBehavior.translucent,
           child: _isLandscape
