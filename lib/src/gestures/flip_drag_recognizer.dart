@@ -45,7 +45,7 @@ class FlipDragRecognizer extends OneSequenceGestureRecognizer {
     if (_pointer != null) return true;
     if (!super.isPointerAllowed(event)) return false;
     if (slotWidth <= 0 || slotWidth.isInfinite) return true;
-    final double x = event.localPosition.dx;
+    final double x = _slotLocalX(event.localPosition.dx);
     final double edgeWidth = slotWidth * edgeHitZoneFraction.clamp(0.0, 0.5);
     return x <= edgeWidth || x >= slotWidth - edgeWidth;
   }
@@ -55,9 +55,14 @@ class FlipDragRecognizer extends OneSequenceGestureRecognizer {
     if (_pointer != null) return true;
     if (!super.isPointerPanZoomAllowed(event)) return false;
     if (slotWidth <= 0 || slotWidth.isInfinite) return true;
-    final double x = event.localPosition.dx;
+    final double x = _slotLocalX(event.localPosition.dx);
     final double edgeWidth = slotWidth * edgeHitZoneFraction.clamp(0.0, 0.5);
     return x <= edgeWidth || x >= slotWidth - edgeWidth;
+  }
+
+  double _slotLocalX(double x) {
+    if (x < 0) return x;
+    return x % slotWidth;
   }
 
   @override

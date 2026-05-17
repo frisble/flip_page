@@ -25,25 +25,22 @@ Widget _harness({
 }
 
 List<Widget> _sixPages() => const [
-      ColoredBox(key: Key('P0'), color: Colors.red, child: SizedBox.expand()),
-      ColoredBox(key: Key('P1'), color: Colors.green, child: SizedBox.expand()),
-      ColoredBox(key: Key('P2'), color: Colors.blue, child: SizedBox.expand()),
-      ColoredBox(key: Key('P3'), color: Colors.amber, child: SizedBox.expand()),
-      ColoredBox(key: Key('P4'), color: Colors.pink, child: SizedBox.expand()),
-      ColoredBox(key: Key('P5'), color: Colors.teal, child: SizedBox.expand()),
-    ];
+  ColoredBox(key: Key('P0'), color: Colors.red, child: SizedBox.expand()),
+  ColoredBox(key: Key('P1'), color: Colors.green, child: SizedBox.expand()),
+  ColoredBox(key: Key('P2'), color: Colors.blue, child: SizedBox.expand()),
+  ColoredBox(key: Key('P3'), color: Colors.amber, child: SizedBox.expand()),
+  ColoredBox(key: Key('P4'), color: Colors.pink, child: SizedBox.expand()),
+  ColoredBox(key: Key('P5'), color: Colors.teal, child: SizedBox.expand()),
+];
 
 void main() {
   group('FlipPage landscape spread', () {
-    testWidgets(
-        'landscape constraints show two pages side by side',
-        (tester) async {
-      await tester.pumpWidget(_harness(
-        pages: _sixPages(),
-        width: 800,
-        height: 400,
-        initialPage: 2,
-      ));
+    testWidgets('landscape constraints show two pages side by side', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _harness(pages: _sixPages(), width: 800, height: 400, initialPage: 2),
+      );
       await tester.pumpAndSettle();
 
       // Both pages of the spread should be visible.
@@ -52,29 +49,28 @@ void main() {
     });
 
     testWidgets('portrait constraints show single page', (tester) async {
-      await tester.pumpWidget(_harness(
-        pages: _sixPages(),
-        width: 400,
-        height: 800,
-        initialPage: 2,
-      ));
+      await tester.pumpWidget(
+        _harness(pages: _sixPages(), width: 400, height: 800, initialPage: 2),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('P2')), findsOneWidget);
       expect(find.byKey(const Key('P3')), findsNothing);
     });
 
-    testWidgets(
-        'drag on right page in landscape advances spread by 2',
-        (tester) async {
+    testWidgets('drag on right page in landscape advances spread by 2', (
+      tester,
+    ) async {
       int? changedTo;
-      await tester.pumpWidget(_harness(
-        pages: _sixPages(),
-        width: 800,
-        height: 400,
-        initialPage: 0,
-        onPageChanged: (i) => changedTo = i,
-      ));
+      await tester.pumpWidget(
+        _harness(
+          pages: _sixPages(),
+          width: 800,
+          height: 400,
+          initialPage: 0,
+          onPageChanged: (i) => changedTo = i,
+        ),
+      );
       await tester.pumpAndSettle();
 
       // Right page occupies the right half (x: 400..800).
@@ -90,6 +86,37 @@ void main() {
       expect(changedTo, equals(2));
       expect(find.byKey(const Key('P2')), findsOneWidget);
       expect(find.byKey(const Key('P3')), findsOneWidget);
+    });
+
+    testWidgets('center drag on right page in landscape does not flip', (
+      tester,
+    ) async {
+      int? changedTo;
+      await tester.pumpWidget(
+        _harness(
+          pages: _sixPages(),
+          width: 800,
+          height: 400,
+          initialPage: 0,
+          onPageChanged: (i) => changedTo = i,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final Finder flip = find.byType(FlipPage);
+      final Offset center = tester.getCenter(flip);
+      final Size size = tester.getSize(flip);
+      final Offset rightSlotCenter = Offset(
+        center.dx + size.width * 0.25,
+        center.dy,
+      );
+
+      await tester.dragFrom(rightSlotCenter, Offset(-size.width * 0.4, 0));
+      await tester.pumpAndSettle();
+
+      expect(changedTo, isNull);
+      expect(find.byKey(const Key('P0')), findsOneWidget);
+      expect(find.byKey(const Key('P1')), findsOneWidget);
     });
   });
 }
