@@ -462,7 +462,8 @@ class _FlipPageState extends State<FlipPage>
                       ..slotWidth = slotWidth
                       ..onStart = _onDragStart
                       ..onUpdate = _onDragUpdate
-                      ..onEnd = _onDragEnd;
+                      ..onEnd = _onDragEnd
+                      ..onCancel = _settleRevert;
                   },
                 ),
           },
