@@ -11,6 +11,9 @@ import 'rendering/flip_corner.dart';
 import 'rendering/fold_geometry.dart';
 import 'rendering/fold_painter.dart';
 
+@visibleForTesting
+bool debugDisableFlipPageSnapshotCapture = false;
+
 /// A page-turning widget with a drag-driven paper-curl animation.
 ///
 /// Flips are initiated by dragging from any edge or corner. The anchor is the
@@ -420,9 +423,9 @@ class _FlipPageState extends State<FlipPage>
   ui.Image? _captureSnapshot() => _captureSnapshotFrom(_snapshotKey);
 
   ui.Image? _captureSnapshotFrom(GlobalKey key) {
+    if (debugDisableFlipPageSnapshotCapture) return null;
     final RenderObject? ro = key.currentContext?.findRenderObject();
     if (ro is! RenderRepaintBoundary) return null;
-    if (ro.debugNeedsPaint) return null;
     try {
       return ro.toImageSync(pixelRatio: MediaQuery.devicePixelRatioOf(context));
     } on Object {
