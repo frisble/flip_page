@@ -1,6 +1,7 @@
 # Internal tooling (non-hidden, must be explicit)
 specs/
 docs/superpowers/
+AGENTS.md
 CLAUDE.md
 CONVERSATION.md
 
