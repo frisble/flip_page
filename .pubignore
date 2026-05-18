@@ -1,5 +1,6 @@
 # Internal tooling (non-hidden, must be explicit)
 specs/
+docs/superpowers/
 CLAUDE.md
 CONVERSATION.md
 
