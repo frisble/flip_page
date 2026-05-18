@@ -1,4 +1,4 @@
-## 0.1.1
+## 0.1.2
 
 - Fix: page flips now work in Flutter release builds by making flip drag arena claiming release-safe.
 - Fix: snapshot capture no longer depends on debug-only render state.
