@@ -1,8 +1,8 @@
-## Unreleased
+## 0.1.1
 
 - Fix: page flips now work in Flutter release builds by making flip drag arena claiming release-safe.
 - Fix: snapshot capture no longer depends on debug-only render state.
-- Fix: removed the premature `touchSlop` public API change from the unreleased package state.
+- Fix: removed the premature `touchSlop` public API change.
 
 ## 0.1.0
 
