@@ -82,7 +82,10 @@ void main() {
         FlipCorner.bottomRight.position(slot),
         equals(const Offset(400, 600)),
       );
-      expect(FlipCorner.bottomLeft.position(slot), equals(const Offset(0, 600)));
+      expect(
+        FlipCorner.bottomLeft.position(slot),
+        equals(const Offset(0, 600)),
+      );
     });
   });
 

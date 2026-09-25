@@ -10,12 +10,7 @@ void main() {
           body: SizedBox(
             width: 400,
             height: 600,
-            child: FlipPage(
-              pages: [
-                Text('hello'),
-                Text('world'),
-              ],
-            ),
+            child: FlipPage(pages: [Text('hello'), Text('world')]),
           ),
         ),
       ),
@@ -28,9 +23,7 @@ void main() {
   testWidgets('empty pages list renders without throwing', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: Scaffold(
-          body: FlipPage(pages: []),
-        ),
+        home: Scaffold(body: FlipPage(pages: [])),
       ),
     );
 

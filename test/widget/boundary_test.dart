@@ -26,14 +26,24 @@ void main() {
   group('FlipPage boundary behavior', () {
     testWidgets('forward drag at last page stays on last page', (tester) async {
       int? changedTo;
-      await tester.pumpWidget(_harness(
-        pages: const [
-          ColoredBox(key: Key('A'), color: Colors.red, child: SizedBox.expand()),
-          ColoredBox(key: Key('B'), color: Colors.blue, child: SizedBox.expand()),
-        ],
-        initialPage: 1,
-        onPageChanged: (i) => changedTo = i,
-      ));
+      await tester.pumpWidget(
+        _harness(
+          pages: const [
+            ColoredBox(
+              key: Key('A'),
+              color: Colors.red,
+              child: SizedBox.expand(),
+            ),
+            ColoredBox(
+              key: Key('B'),
+              color: Colors.blue,
+              child: SizedBox.expand(),
+            ),
+          ],
+          initialPage: 1,
+          onPageChanged: (i) => changedTo = i,
+        ),
+      );
       await tester.pumpAndSettle();
 
       final Finder flip = find.byType(FlipPage);
@@ -49,13 +59,23 @@ void main() {
 
     testWidgets('backward drag at page 0 stays on page 0', (tester) async {
       int? changedTo;
-      await tester.pumpWidget(_harness(
-        pages: const [
-          ColoredBox(key: Key('A'), color: Colors.red, child: SizedBox.expand()),
-          ColoredBox(key: Key('B'), color: Colors.blue, child: SizedBox.expand()),
-        ],
-        onPageChanged: (i) => changedTo = i,
-      ));
+      await tester.pumpWidget(
+        _harness(
+          pages: const [
+            ColoredBox(
+              key: Key('A'),
+              color: Colors.red,
+              child: SizedBox.expand(),
+            ),
+            ColoredBox(
+              key: Key('B'),
+              color: Colors.blue,
+              child: SizedBox.expand(),
+            ),
+          ],
+          onPageChanged: (i) => changedTo = i,
+        ),
+      );
       await tester.pumpAndSettle();
 
       final Finder flip = find.byType(FlipPage);
@@ -77,12 +97,18 @@ void main() {
 
     testWidgets('single page list: drag is a no-op', (tester) async {
       int? changedTo;
-      await tester.pumpWidget(_harness(
-        pages: const [
-          ColoredBox(key: Key('only'), color: Colors.red, child: SizedBox.expand()),
-        ],
-        onPageChanged: (i) => changedTo = i,
-      ));
+      await tester.pumpWidget(
+        _harness(
+          pages: const [
+            ColoredBox(
+              key: Key('only'),
+              color: Colors.red,
+              child: SizedBox.expand(),
+            ),
+          ],
+          onPageChanged: (i) => changedTo = i,
+        ),
+      );
       await tester.pumpAndSettle();
 
       final Finder flip = find.byType(FlipPage);

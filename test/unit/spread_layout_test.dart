@@ -5,26 +5,17 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('SpreadLayout.resolve', () {
     test('portrait when ratio below 1.2', () {
-      const constraints = BoxConstraints(
-        maxWidth: 400,
-        maxHeight: 800,
-      );
+      const constraints = BoxConstraints(maxWidth: 400, maxHeight: 800);
       expect(SpreadLayout.resolve(constraints), equals(SpreadMode.portrait));
     });
 
     test('landscape when ratio at 1.2', () {
-      const constraints = BoxConstraints(
-        maxWidth: 480,
-        maxHeight: 400,
-      );
+      const constraints = BoxConstraints(maxWidth: 480, maxHeight: 400);
       expect(SpreadLayout.resolve(constraints), equals(SpreadMode.landscape));
     });
 
     test('landscape when ratio above 1.2', () {
-      const constraints = BoxConstraints(
-        maxWidth: 800,
-        maxHeight: 400,
-      );
+      const constraints = BoxConstraints(maxWidth: 800, maxHeight: 400);
       expect(SpreadLayout.resolve(constraints), equals(SpreadMode.landscape));
     });
 

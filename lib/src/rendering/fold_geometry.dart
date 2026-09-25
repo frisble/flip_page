@@ -44,10 +44,7 @@ class FoldGeometry {
     // line (not a segment).
     final double span = slotSize.width + slotSize.height;
     final Offset perp = Offset(-normal.dy, normal.dx);
-    _foldLine = (
-      a: mid - perp * span,
-      b: mid + perp * span,
-    );
+    _foldLine = (a: mid - perp * span, b: mid + perp * span);
 
     _reflectionMatrix = _buildReflectionMatrix(normal, mid);
 
@@ -238,10 +235,16 @@ class FoldGeometry {
       final Offset a = unfoldedPoly[i];
       final Offset b = unfoldedPoly[(i + 1) % unfoldedPoly.length];
       final Offset edge = b - a;
-      final Offset edgeNormal = Offset(-edge.dy, edge.dx); // interior normal for CCW polygon
+      final Offset edgeNormal = Offset(
+        -edge.dy,
+        edge.dx,
+      ); // interior normal for CCW polygon
       final double edgeLen = edgeNormal.distance;
       if (edgeLen < _epsilon) continue;
-      final Offset unit = Offset(edgeNormal.dx / edgeLen, edgeNormal.dy / edgeLen);
+      final Offset unit = Offset(
+        edgeNormal.dx / edgeLen,
+        edgeNormal.dy / edgeLen,
+      );
       result = _clipHalfPlane(result, a, unit);
       if (result.isEmpty) return Path();
     }

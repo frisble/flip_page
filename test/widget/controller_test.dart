@@ -25,24 +25,27 @@ Widget _harness({
 }
 
 List<Widget> _fivePages() => const [
-      ColoredBox(key: Key('P0'), color: Colors.red, child: SizedBox.expand()),
-      ColoredBox(key: Key('P1'), color: Colors.green, child: SizedBox.expand()),
-      ColoredBox(key: Key('P2'), color: Colors.blue, child: SizedBox.expand()),
-      ColoredBox(key: Key('P3'), color: Colors.amber, child: SizedBox.expand()),
-      ColoredBox(key: Key('P4'), color: Colors.pink, child: SizedBox.expand()),
-    ];
+  ColoredBox(key: Key('P0'), color: Colors.red, child: SizedBox.expand()),
+  ColoredBox(key: Key('P1'), color: Colors.green, child: SizedBox.expand()),
+  ColoredBox(key: Key('P2'), color: Colors.blue, child: SizedBox.expand()),
+  ColoredBox(key: Key('P3'), color: Colors.amber, child: SizedBox.expand()),
+  ColoredBox(key: Key('P4'), color: Colors.pink, child: SizedBox.expand()),
+];
 
 void main() {
   group('FlipPageController with widget', () {
-    testWidgets('controller.jumpTo changes page without animation',
-        (tester) async {
+    testWidgets('controller.jumpTo changes page without animation', (
+      tester,
+    ) async {
       final controller = FlipPageController();
       int? changedTo;
-      await tester.pumpWidget(_harness(
-        pages: _fivePages(),
-        controller: controller,
-        onPageChanged: (i) => changedTo = i,
-      ));
+      await tester.pumpWidget(
+        _harness(
+          pages: _fivePages(),
+          controller: controller,
+          onPageChanged: (i) => changedTo = i,
+        ),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('P0')), findsOneWidget);
@@ -59,11 +62,13 @@ void main() {
     testWidgets('controller.jumpTo out of range is a no-op', (tester) async {
       final controller = FlipPageController();
       int? changedTo;
-      await tester.pumpWidget(_harness(
-        pages: _fivePages(),
-        controller: controller,
-        onPageChanged: (i) => changedTo = i,
-      ));
+      await tester.pumpWidget(
+        _harness(
+          pages: _fivePages(),
+          controller: controller,
+          onPageChanged: (i) => changedTo = i,
+        ),
+      );
       await tester.pumpAndSettle();
 
       controller.jumpTo(99);
@@ -78,11 +83,13 @@ void main() {
     testWidgets('controller.next animates forward', (tester) async {
       final controller = FlipPageController();
       int? changedTo;
-      await tester.pumpWidget(_harness(
-        pages: _fivePages(),
-        controller: controller,
-        onPageChanged: (i) => changedTo = i,
-      ));
+      await tester.pumpWidget(
+        _harness(
+          pages: _fivePages(),
+          controller: controller,
+          onPageChanged: (i) => changedTo = i,
+        ),
+      );
       await tester.pumpAndSettle();
 
       controller.next();
@@ -97,11 +104,13 @@ void main() {
     testWidgets('controller.previous at page 0 is a no-op', (tester) async {
       final controller = FlipPageController();
       int? changedTo;
-      await tester.pumpWidget(_harness(
-        pages: _fivePages(),
-        controller: controller,
-        onPageChanged: (i) => changedTo = i,
-      ));
+      await tester.pumpWidget(
+        _harness(
+          pages: _fivePages(),
+          controller: controller,
+          onPageChanged: (i) => changedTo = i,
+        ),
+      );
       await tester.pumpAndSettle();
 
       controller.previous();
@@ -113,22 +122,24 @@ void main() {
       controller.dispose();
     });
 
-    testWidgets('gesture-driven flip also fires onPageChanged once',
-        (tester) async {
+    testWidgets('gesture-driven flip also fires onPageChanged once', (
+      tester,
+    ) async {
       final controller = FlipPageController();
       final changes = <int>[];
-      await tester.pumpWidget(_harness(
-        pages: _fivePages(),
-        controller: controller,
-        onPageChanged: (i) => changes.add(i),
-      ));
+      await tester.pumpWidget(
+        _harness(
+          pages: _fivePages(),
+          controller: controller,
+          onPageChanged: (i) => changes.add(i),
+        ),
+      );
       await tester.pumpAndSettle();
 
       final Finder flip = find.byType(FlipPage);
       final Offset center = tester.getCenter(flip);
       final Size size = tester.getSize(flip);
-      final Offset start =
-          Offset(center.dx + size.width * 0.3, center.dy);
+      final Offset start = Offset(center.dx + size.width * 0.3, center.dy);
       await tester.dragFrom(start, Offset(-size.width * 0.7, 0));
       await tester.pumpAndSettle();
 

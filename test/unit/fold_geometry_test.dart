@@ -172,15 +172,18 @@ class _Vec {
 }
 
 _Vec _apply(Matrix4 m, _Vec v) {
-  final double nx = m.entry(0, 0) * v.x +
+  final double nx =
+      m.entry(0, 0) * v.x +
       m.entry(0, 1) * v.y +
       m.entry(0, 2) * v.z +
       m.entry(0, 3);
-  final double ny = m.entry(1, 0) * v.x +
+  final double ny =
+      m.entry(1, 0) * v.x +
       m.entry(1, 1) * v.y +
       m.entry(1, 2) * v.z +
       m.entry(1, 3);
-  final double nz = m.entry(2, 0) * v.x +
+  final double nz =
+      m.entry(2, 0) * v.x +
       m.entry(2, 1) * v.y +
       m.entry(2, 2) * v.z +
       m.entry(2, 3);
