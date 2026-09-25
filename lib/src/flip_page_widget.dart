@@ -82,16 +82,8 @@ class _FlipPageState extends State<FlipPage>
   Offset? _settleTo; // settle end (opposite point or anchor)
   ui.Image? _outgoingSnapshot;
 
-  final GlobalKey _snapshotKey = GlobalKey(debugLabel: 'flip_page.snapshot');
-  final GlobalKey _snapshotKeyRight = GlobalKey(
-    debugLabel: 'flip_page.snapshot_r',
-  );
-
-  /// Stable per-index identity for page subtrees. Keeps a page's Element — and
-  /// therefore its State, including any decoded images — alive as the page
-  /// moves between the idle slot and the drag overlay, instead of remounting
-  /// (and visibly reloading) on every flip. Grows lazily; stale entries for
-  /// removed indices are harmless.
+  /// Snapshot keys of each page's [RepaintBoundary] (see [_pageKey]). Grows
+  /// lazily; stale entries for removed indices are harmless.
   final Map<int, GlobalKey> _pageKeys = {};
   bool _isLandscape = false;
   bool _activeSlotIsRight = true;
@@ -317,10 +309,9 @@ class _FlipPageState extends State<FlipPage>
       return;
     }
 
-    final GlobalKey captureKey = _isLandscape && _activeSlotIsRight
-        ? _snapshotKeyRight
-        : _snapshotKey;
-    final ui.Image? snapshot = _captureSnapshotFrom(captureKey);
+    final ui.Image? snapshot = _captureSnapshotFrom(
+      _pageKey(_currentIndex + (_isLandscape && _activeSlotIsRight ? 1 : 0)),
+    );
 
     setState(() {
       _direction = candidate;
@@ -427,7 +418,7 @@ class _FlipPageState extends State<FlipPage>
 
   // ────────────── Snapshot ──────────────
 
-  ui.Image? _captureSnapshot() => _captureSnapshotFrom(_snapshotKey);
+  ui.Image? _captureSnapshot() => _captureSnapshotFrom(_pageKey(_currentIndex));
 
   ui.Image? _captureSnapshotFrom(GlobalKey key) {
     if (debugDisableFlipPageSnapshotCapture) return null;
@@ -478,15 +469,11 @@ class _FlipPageState extends State<FlipPage>
                 ),
           },
           behavior: HitTestBehavior.translucent,
-          child: _isLandscape
-              ? _buildLandscape(constraints.biggest)
-              : _buildPortrait(constraints.biggest),
+          child: _buildPages(constraints.biggest),
         );
       },
     );
   }
-
-  // ────────────── Portrait ──────────────
 
   bool get _isDragging =>
       _direction != FlipDirection.none &&
@@ -494,153 +481,100 @@ class _FlipPageState extends State<FlipPage>
       _pointer != null &&
       _pointer != _anchorOffset;
 
-  Widget _buildPortrait(Size slotSize) {
-    if (!_isDragging) {
-      // Pre-mount the immediate neighbours offstage so their content — and any
-      // images — is already loaded when a flip reveals them, avoiding a
-      // first-paint flash on the incoming page. They migrate into the drag
-      // overlay via their stable page key.
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          _idlePage(_currentIndex, _snapshotKey),
-          ..._offstagePages(
-            [_currentIndex - 1, _currentIndex + 1],
-            {_currentIndex},
-          ),
-        ],
-      );
-    }
-    return _buildDragOverlay(slotSize, _currentIndex);
-  }
-
-  // ────────────── Landscape ──────────────
-
-  Widget _buildLandscape(Size fullSize) {
-    final int leftIndex = _currentIndex;
-    final int rightIndex = _currentIndex + 1;
-    final bool hasRight = rightIndex < widget.pages.length;
-    final Size slotSize = Size(fullSize.width / 2, fullSize.height);
-
-    Widget leftSlot;
-    Widget rightSlot;
-
-    if (_isDragging && _activeSlotIsRight && hasRight) {
-      leftSlot = _idlePage(leftIndex, _snapshotKey);
-      rightSlot = _buildDragOverlay(slotSize, rightIndex);
-    } else if (_isDragging && !_activeSlotIsRight) {
-      leftSlot = _buildDragOverlay(slotSize, leftIndex);
-      rightSlot = hasRight
-          ? _idlePage(rightIndex, _snapshotKeyRight)
-          : const SizedBox.expand();
-    } else {
-      // Idle spread — pre-mount the pages adjacent to the visible spread
-      // offstage so the next flip reveals them without a first-paint flash.
-      final Widget spread = _spread(
-        _idlePage(leftIndex, _snapshotKey),
-        hasRight
-            ? _idlePage(rightIndex, _snapshotKeyRight)
-            : const SizedBox.expand(),
-      );
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          spread,
-          ..._offstagePages([
-            leftIndex - 2,
-            leftIndex - 1,
-            rightIndex + 1,
-            rightIndex + 2,
-          ], {leftIndex, rightIndex}),
-        ],
-      );
-    }
-
-    return _spread(leftSlot, rightSlot);
-  }
-
-  Widget _spread(Widget left, Widget right) => Row(
-    children: [Expanded(child: left), Expanded(child: right)],
-  );
-
-  /// Wraps `widget.pages[index]` in a [KeyedSubtree] with a stable [GlobalKey]
-  /// so the page's Element migrates (rather than remounts) when it moves
-  /// between the idle slot and the drag overlay.
-  Widget _keyedPage(int index) {
-    final key = _pageKeys.putIfAbsent(
-      index,
-      () => GlobalKey(debugLabel: 'flip_page.page_$index'),
-    );
-    return KeyedSubtree(key: key, child: widget.pages[index]);
-  }
-
-  /// Mounted-but-unpainted copies of [indices] (skipping out-of-range, [exclude]
-  /// and duplicates), kept warm so a flip that reveals them does not have to
-  /// build/load from scratch. Positioned so they never affect Stack sizing.
-  Iterable<Widget> _offstagePages(Iterable<int> indices, Set<int> exclude) sync* {
-    final seen = <int>{};
-    for (final i in indices) {
-      if (i < 0 || i >= widget.pages.length) continue;
-      if (exclude.contains(i) || !seen.add(i)) continue;
-      yield Positioned.fill(child: Offstage(child: _keyedPage(i)));
-    }
-  }
-
-  Widget _idlePage(int index, GlobalKey key) {
-    return Semantics(
-      label: 'Page ${index + 1} of ${widget.pages.length}',
-      liveRegion: true,
-      child: RepaintBoundary(
-        key: key,
-        child: SizedBox.expand(child: _keyedPage(index)),
-      ),
-    );
-  }
-
-  // ────────────── Drag overlay ──────────────
-
-  Widget _buildDragOverlay(Size slotSize, int outgoingIndex) {
-    final ui.Image? snapshot = _outgoingSnapshot;
-    if (snapshot == null) {
-      return SizedBox.expand(child: _keyedPage(outgoingIndex));
-    }
-
-    final bool isForward = _direction == FlipDirection.forward;
+  /// All pages live in ONE [Stack], each under a stable `ValueKey(index)`, and
+  /// never move to another parent: a page turn only flips which of them is
+  /// [Offstage] and which slot rect it is positioned in. This is what keeps a
+  /// page's State (decoded images, scroll positions) across flips.
+  ///
+  /// Pages must not be reparented (e.g. via a [GlobalKey] moving a page from
+  /// an idle slot into a drag overlay): with semantics enabled, the framework
+  /// keeps the moved render object in its old semantics parent's child list for
+  /// a frame and trips `identical(childRenderObject, parentRenderObject)` in
+  /// `_SemanticsGeometry.computeChildGeometry` — reliably so for any page
+  /// containing a scrollable, whose viewport is a semantics boundary.
+  Widget _buildPages(Size fullSize) {
+    final int count = widget.pages.length;
     final int step = _isLandscape ? 2 : 1;
-    final int peekIndex = isForward
-        ? outgoingIndex + step
-        : outgoingIndex - step;
-    final int safePeekIndex = peekIndex.clamp(0, widget.pages.length - 1);
+    final Size slotSize = _isLandscape
+        ? Size(fullSize.width / 2, fullSize.height)
+        : fullSize;
+    final Rect leftRect = Offset.zero & slotSize;
+    final Rect rightRect = Offset(slotSize.width, 0) & slotSize;
+    // Landscape: a page sits in the slot matching its parity relative to the
+    // current (left) page, so it keeps its slot as the spread advances by 2.
+    Rect slotOf(int index) =>
+        _isLandscape && (index - _currentIndex).isOdd ? rightRect : leftRect;
 
-    final FoldGeometry geometry = FoldGeometry(
-      slotSize: slotSize,
-      anchor: _anchorOffset!,
-      pointer: _pointer!,
+    final Set<int> visible = {
+      _currentIndex,
+      if (_isLandscape && _currentIndex + 1 < count) _currentIndex + 1,
+    };
+    final int outgoing =
+        _currentIndex + (_isLandscape && _activeSlotIsRight ? 1 : 0);
+    final ui.Image? snapshot = _outgoingSnapshot;
+    final bool curling = _isDragging && snapshot != null && outgoing < count;
+    if (curling) {
+      // The curl is drawn from the snapshot, so the outgoing page goes
+      // offstage (still mounted) and the page underneath is revealed.
+      final int peek =
+          (outgoing + (_direction == FlipDirection.forward ? step : -step))
+              .clamp(0, count - 1);
+      visible
+        ..remove(outgoing)
+        ..add(peek);
+    }
+
+    // Warm window: immediate neighbours of the visible page(s) stay mounted
+    // offstage so a flip reveals them already built and loaded.
+    final int first = math.max(0, _currentIndex - step);
+    final int last = math.min(
+      count - 1,
+      _currentIndex + (_isLandscape ? 3 : 1),
     );
 
     return Stack(
       children: [
-        Positioned.fill(child: _keyedPage(safePeekIndex)),
-        // Keep the outgoing page mounted (but unpainted) for the duration of the
-        // drag so its State — and any decoded images — survive. The curl itself
-        // is drawn from the snapshot bitmap, so this page need not paint; on
-        // revert it migrates straight back to the idle slot without remounting.
-        // Must be a *positioned* child: a non-positioned Offstage would collapse
-        // the Stack's size. Guarded so a boundary clamp cannot duplicate the
-        // peek's GlobalKey.
-        if (safePeekIndex != outgoingIndex)
-          Positioned.fill(child: Offstage(child: _keyedPage(outgoingIndex))),
-        Positioned.fill(
-          child: CustomPaint(
-            painter: FoldPainter(
-              snapshot: snapshot,
-              geometry: geometry,
-              backTintColor: widget.backTintColor,
-              shadowColor: widget.shadowColor,
+        for (int i = first; i <= last; i++)
+          Positioned.fromRect(
+            key: ValueKey<int>(i),
+            rect: slotOf(i),
+            child: Offstage(
+              offstage: !visible.contains(i),
+              child: Semantics(
+                label: 'Page ${i + 1} of $count',
+                liveRegion: true,
+                child: RepaintBoundary(
+                  key: _pageKey(i),
+                  child: widget.pages[i],
+                ),
+              ),
             ),
           ),
-        ),
+        if (curling)
+          Positioned.fromRect(
+            key: const ValueKey<String>('flip_page.curl'),
+            rect: slotOf(outgoing),
+            child: CustomPaint(
+              painter: FoldPainter(
+                snapshot: snapshot,
+                geometry: FoldGeometry(
+                  slotSize: slotSize,
+                  anchor: _anchorOffset!,
+                  pointer: _pointer!,
+                ),
+                backTintColor: widget.backTintColor,
+                shadowColor: widget.shadowColor,
+              ),
+            ),
+          ),
       ],
     );
   }
+
+  /// Per-index key of a page's [RepaintBoundary], used to snapshot it. The
+  /// boundary never changes parent, so this key never reparents anything.
+  GlobalKey _pageKey(int index) => _pageKeys.putIfAbsent(
+    index,
+    () => GlobalKey(debugLabel: 'flip_page.page_$index'),
+  );
 }

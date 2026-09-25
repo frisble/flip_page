@@ -1,3 +1,7 @@
+## 0.1.4
+
+- Fix: a page containing a scrollable (`ListView`, `GridView` — even with `NeverScrollableScrollPhysics` — `SingleChildScrollView`, …) no longer trips the framework assertion `identical(childRenderObject, parentRenderObject)` in `_SemanticsGeometry.computeChildGeometry` when a page turn runs with semantics enabled (screen readers, `tester.ensureSemantics()`, debug builds). Pages are no longer reparented between an idle slot and a drag overlay via a `GlobalKey`; they all live in one `Stack` under a stable per-index key and a turn only toggles which one is offstage. Page state (scroll offsets, decoded images) is still kept across flips, and the warm neighbour pages now also stay mounted during a drag.
+
 ## 0.1.3
 
 - Fix: pages now keep their `State` across a flip instead of remounting. Each page is given a stable per-index identity and the outgoing page is kept mounted (offstage) during the drag, so a revert or completed flip no longer rebuilds the page subtree. This removes the visible image reload/flicker on widgets that hold state (e.g. `Image`/`CachedNetworkImage`) when swiping.
