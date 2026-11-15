@@ -38,3 +38,6 @@ specs/
 !docs/superpowers/specs/**
 CLAUDE.md
 CONVERSATION.md
+
+# FVM Version Cache
+.fvm/
